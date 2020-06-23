@@ -40,7 +40,7 @@
 #  define SET_BINARY_MODE(file)
 #endif
 
-#if defined(_MSC_VER) && _MSC_VER < 1900
+#ifdef _MSC_VER
 #  define snprintf _snprintf
 #endif
 
@@ -156,14 +156,14 @@ void *myalloc(q, n, m)
     void *q;
     unsigned n, m;
 {
-    (void)q;
+    q = Z_NULL;
     return calloc(n, m);
 }
 
 void myfree(q, p)
     void *q, *p;
 {
-    (void)q;
+    q = Z_NULL;
     free(p);
 }
 
@@ -333,7 +333,7 @@ const char *gzerror(gz, err)
 
 #endif
 
-static char *prog;
+char *prog;
 
 void error            OF((const char *msg));
 void gz_compress      OF((FILE   *in, gzFile out));
@@ -341,8 +341,8 @@ void gz_compress      OF((FILE   *in, gzFile out));
 int  gz_compress_mmap OF((FILE   *in, gzFile out));
 #endif
 void gz_uncompress    OF((gzFile in, FILE   *out));
-void file_compress    OF((char  *file, char *mode));
-void file_uncompress  OF((char  *file));
+void file_compress    OF((char  *file, char *mode, int keep));
+void file_uncompress  OF((char  *file, int keep));
 int  main             OF((int argc, char *argv[]));
 
 /* ===========================================================================
@@ -454,9 +454,10 @@ void gz_uncompress(in, out)
  * Compress the given file: create a corresponding .gz file and remove the
  * original.
  */
-void file_compress(file, mode)
+void file_compress(file, mode, keep)
     char  *file;
     char  *mode;
+    int   keep;
 {
     local char outfile[MAX_NAME_LEN];
     FILE  *in;
@@ -486,21 +487,23 @@ void file_compress(file, mode)
     }
     gz_compress(in, out);
 
-    unlink(file);
+    if (!keep)
+        unlink(file);
 }
 
 
 /* ===========================================================================
  * Uncompress the given file and remove the original.
  */
-void file_uncompress(file)
+void file_uncompress(file, keep)
     char  *file;
+    int   keep;
 {
     local char buf[MAX_NAME_LEN];
     char *infile, *outfile;
     FILE  *out;
     gzFile in;
-    unsigned len = strlen(file);
+    size_t len = strlen(file);
 
     if (len + strlen(GZ_SUFFIX) >= sizeof(buf)) {
         fprintf(stderr, "%s: filename too long\n", prog);
@@ -539,16 +542,18 @@ void file_uncompress(file)
 
     gz_uncompress(in, out);
 
-    unlink(infile);
+    if (!keep)
+        unlink(infile);
 }
 
 
 /* ===========================================================================
- * Usage:  minigzip [-c] [-d] [-f] [-h] [-r] [-1 to -9] [files...]
+ * Usage:  minigzip [-c] [-d] [-f] [-h] [-k] [-r] [-1 to -9] [files...]
  *   -c : write to standard output
  *   -d : decompress
  *   -f : compress with Z_FILTERED
  *   -h : compress with Z_HUFFMAN_ONLY
+ *   -k : Keep input files
  *   -r : compress with Z_RLE
  *   -1 to -9 : compression level
  */
@@ -559,6 +564,7 @@ int main(argc, argv)
 {
     int copyout = 0;
     int uncompr = 0;
+    int keep = 0;
     gzFile file;
     char *bname, outmode[20];
 
@@ -590,6 +596,8 @@ int main(argc, argv)
         outmode[3] = 'f';
       else if (strcmp(*argv, "-h") == 0)
         outmode[3] = 'h';
+      else if (strcmp(*argv, "-k") == 0)
+        keep = 1;       
       else if (strcmp(*argv, "-r") == 0)
         outmode[3] = 'R';
       else if ((*argv)[0] == '-' && (*argv)[1] >= '1' && (*argv)[1] <= '9' &&
@@ -626,7 +634,7 @@ int main(argc, argv)
                     else
                         gz_uncompress(file, stdout);
                 } else {
-                    file_uncompress(*argv);
+                    file_uncompress(*argv, keep);
                 }
             } else {
                 if (copyout) {
@@ -642,7 +650,7 @@ int main(argc, argv)
                     }
 
                 } else {
-                    file_compress(*argv, outmode);
+                    file_compress(*argv, outmode, keep);
                 }
             }
         } while (argv++, --argc);
